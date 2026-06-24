@@ -49,6 +49,8 @@ import {
   FileText,
   FileSpreadsheet,
   ChevronDown,
+  Filter,
+  X,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Document, Packer, Paragraph, Table as DocTable, TableCell as DocTableCell, TableRow as DocTableRow, WidthType, BorderStyle, AlignmentType } from "docx";
@@ -300,6 +302,132 @@ const exportFunctions = {
     const blob = await Packer.toBlob(doc);
     saveAs(blob, `${cert.fullNameEn}_${cert.courseName}.docx`);
   },
+
+  exportMultipleToTxt: (certs: any[], courseConfigs: typeof COURSE_CONFIGS) => {
+    const lines: string[] = [];
+    
+    // Get all unique subjects from all certificates
+    const allSubjects = new Set<string>();
+    certs.forEach(cert => {
+      const config = courseConfigs[cert.courseName];
+      if (config) {
+        config.subjects.forEach(sub => allSubjects.add(sub));
+      }
+    });
+    
+    const subjectsArray = Array.from(allSubjects);
+    lines.push(`Name,Course,Average,Grade,${subjectsArray.join(",")}`);
+    
+    certs.forEach(cert => {
+      const config = courseConfigs[cert.courseName];
+      const gradeValues: string[] = [];
+      
+      subjectsArray.forEach(sub => {
+        if (config?.subjects.includes(sub)) {
+          const val = cert.grades?.[sub];
+          gradeValues.push(typeof val === 'object' ? (val.result || "") : (val || ""));
+        } else {
+          gradeValues.push("");
+        }
+      });
+      
+      lines.push(`${cert.fullNameEn},${cert.courseName},${cert.average || ""},${cert.finalGrade || ""},${gradeValues.join(",")}`);
+    });
+    
+    const content = lines.join("\n");
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Certificates_${new Date().toISOString().split('T')[0]}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  exportMultipleToWord: async (certs: any[], courseConfigs: typeof COURSE_CONFIGS) => {
+    // Get all unique subjects
+    const allSubjects = new Set<string>();
+    certs.forEach(cert => {
+      const config = courseConfigs[cert.courseName];
+      if (config) {
+        config.subjects.forEach(sub => allSubjects.add(sub));
+      }
+    });
+    
+    const subjectsArray = Array.from(allSubjects);
+    const tableRows: DocTableRow[] = [];
+    
+    // Header row
+    const headerCells = [
+      new DocTableCell({ children: [new Paragraph("Name")] }),
+      new DocTableCell({ children: [new Paragraph("Course")] }),
+      new DocTableCell({ children: [new Paragraph("Average")] }),
+      new DocTableCell({ children: [new Paragraph("Grade")] }),
+    ];
+    
+    subjectsArray.forEach(sub => {
+      headerCells.push(new DocTableCell({ children: [new Paragraph(sub)] }));
+    });
+    
+    tableRows.push(new DocTableRow({ children: headerCells }));
+    
+    // Data rows
+    certs.forEach(cert => {
+      const config = courseConfigs[cert.courseName];
+      const dataCells = [
+        new DocTableCell({ children: [new Paragraph(cert.fullNameEn)] }),
+        new DocTableCell({ children: [new Paragraph(cert.courseName)] }),
+        new DocTableCell({ children: [new Paragraph(cert.average || "")] }),
+        new DocTableCell({ children: [new Paragraph(cert.finalGrade || "")] }),
+      ];
+      
+      subjectsArray.forEach(sub => {
+        if (config?.subjects.includes(sub)) {
+          const val = cert.grades?.[sub];
+          const displayVal = typeof val === 'object' ? (val.result || "") : (val || "");
+          dataCells.push(new DocTableCell({ children: [new Paragraph(displayVal)] }));
+        } else {
+          dataCells.push(new DocTableCell({ children: [new Paragraph("")] }));
+        }
+      });
+      
+      tableRows.push(new DocTableRow({ children: dataCells }));
+    });
+    
+    const doc = new Document({
+      sections: [{
+        children: [
+          new Paragraph({
+            text: `Certificates Report - ${new Date().toLocaleDateString('ar-SA')}`,
+            bold: true,
+            size: 28,
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph({
+            text: `Total: ${certs.length} Certificate(s)`,
+            size: 20,
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph(""),
+          new DocTable({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: tableRows,
+            borders: {
+              top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              left: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              right: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              insideVertical: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+            },
+          }),
+        ],
+      }],
+    });
+    
+    const blob = await Packer.toBlob(doc);
+    saveAs(blob, `Certificates_${new Date().toISOString().split('T')[0]}.docx`);
+  },
 };
 
 // ─── Main Certificates Dashboard ──────────────────────────────────────────────
@@ -307,9 +435,13 @@ export default function CertificatesDashboard() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [courseFilter, setCourseFilter] = useState("all");
+  const [genderFilter, setGenderFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [selectedCert, setSelectedCert] = useState<any>(null);
   const [gradesCert, setGradesCert] = useState<any>(null);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   const utils = trpc.useUtils();
 
@@ -333,18 +465,40 @@ export default function CertificatesDashboard() {
     onSuccess: () => { utils.admin.getCertificateRequests.invalidate(); setDeleteId(null); toast.success("تم حذف الطلب"); },
   });
 
+  // Apply all filters
   const filteredCerts = certs?.filter((cert) => {
     const matchesSearch = cert.fullNameAr.includes(search) || cert.fullNameEn.includes(search) || cert.phone.includes(search);
     const matchesStatus = statusFilter === "all" || cert.status === statusFilter;
     const matchesCourse = courseFilter === "all" || cert.courseName === courseFilter;
-    return matchesSearch && matchesStatus && matchesCourse;
+    const matchesGender = genderFilter === "all" || cert.gender === genderFilter;
+    
+    // Date filtering
+    let matchesDate = true;
+    if (dateFrom || dateTo) {
+      const certDate = new Date(cert.createdAt);
+      if (dateFrom) {
+        const fromDate = new Date(dateFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        matchesDate = matchesDate && certDate >= fromDate;
+      }
+      if (dateTo) {
+        const toDate = new Date(dateTo);
+        toDate.setHours(23, 59, 59, 999);
+        matchesDate = matchesDate && certDate <= toDate;
+      }
+    }
+    
+    return matchesSearch && matchesStatus && matchesCourse && matchesGender && matchesDate;
   }) || [];
+
+  const hasActiveFilters = courseFilter !== "all" || genderFilter !== "all" || dateFrom || dateTo;
 
   const exportToExcel = () => {
     const data = filteredCerts.map(c => ({
       "الاسم عربي": c.fullNameAr,
       "الاسم إنجليزي": c.fullNameEn,
       "الدورة": c.courseName,
+      "الجنس": c.gender === "male" ? "ذكر" : "أنثى",
       "المعدل": c.average || "",
       "التقدير": c.finalGrade || "",
       "التاريخ": new Date(c.createdAt).toLocaleDateString("ar-SA")
@@ -352,48 +506,16 @@ export default function CertificatesDashboard() {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "الشهادات");
-    XLSX.writeFile(wb, "Certificate_Requests.xlsx");
+    XLSX.writeFile(wb, `Certificates_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const exportAllToTxt = () => {
-    const lines: string[] = [];
-    
-    // Get all unique subjects from all certificates
-    const allSubjects = new Set<string>();
-    filteredCerts.forEach(cert => {
-      const config = COURSE_CONFIGS[cert.courseName];
-      if (config) {
-        config.subjects.forEach(sub => allSubjects.add(sub));
-      }
-    });
-    
-    const subjectsArray = Array.from(allSubjects);
-    lines.push(`Name,Course,Average,Grade,${subjectsArray.join(",")}`);
-    
-    filteredCerts.forEach(cert => {
-      const config = COURSE_CONFIGS[cert.courseName];
-      const gradeValues: string[] = [];
-      
-      subjectsArray.forEach(sub => {
-        if (config?.subjects.includes(sub)) {
-          const val = cert.grades?.[sub];
-          gradeValues.push(typeof val === 'object' ? (val.result || "") : (val || ""));
-        } else {
-          gradeValues.push("");
-        }
-      });
-      
-      lines.push(`${cert.fullNameEn},${cert.courseName},${cert.average || ""},${cert.finalGrade || ""},${gradeValues.join(",")}`);
-    });
-    
-    const content = lines.join("\n");
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `All_Certificates_${new Date().toISOString().split('T')[0]}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const clearFilters = () => {
+    setSearch("");
+    setStatusFilter("all");
+    setCourseFilter("all");
+    setGenderFilter("all");
+    setDateFrom("");
+    setDateTo("");
   };
 
   return (
@@ -405,10 +527,27 @@ export default function CertificatesDashboard() {
             <div className="flex gap-2 flex-wrap">
               <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5"><RefreshCw className="w-4 h-4" /> تحديث</Button>
               <Button size="sm" onClick={exportToExcel} className="gap-1.5 bg-green-600 text-white"><FileSpreadsheet className="w-4 h-4" /> Excel</Button>
-              <Button size="sm" onClick={exportAllToTxt} className="gap-1.5 bg-blue-600 text-white"><FileText className="w-4 h-4" /> Text</Button>
+              {filteredCerts.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" className="gap-1.5 bg-blue-600 text-white">
+                      <Download className="w-4 h-4" /> تنزيل الكل
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => exportFunctions.exportMultipleToTxt(filteredCerts, COURSE_CONFIGS)}>
+                      تنزيل كـ Text ({filteredCerts.length})
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => exportFunctions.exportMultipleToWord(filteredCerts, COURSE_CONFIGS)}>
+                      تنزيل كـ Word ({filteredCerts.length})
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </div>
 
+          {/* Basic Filters */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
             <div className="relative">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -429,7 +568,75 @@ export default function CertificatesDashboard() {
                 {Object.keys(COURSE_CONFIGS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Button 
+              variant={showAdvancedFilters ? "default" : "outline"} 
+              size="sm" 
+              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+              className="gap-1.5"
+            >
+              <Filter className="w-4 h-4" /> فلاتر متقدمة
+            </Button>
           </div>
+
+          {/* Advanced Filters */}
+          {showAdvancedFilters && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">الجنس</label>
+                <Select value={genderFilter} onValueChange={setGenderFilter}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="الجنس" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">الكل</SelectItem>
+                    <SelectItem value="male">ذكور</SelectItem>
+                    <SelectItem value="female">إناث</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">من التاريخ</label>
+                <Input 
+                  type="date" 
+                  value={dateFrom} 
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="h-9"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">إلى التاريخ</label>
+                <Input 
+                  type="date" 
+                  value={dateTo} 
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="h-9"
+                />
+              </div>
+              {hasActiveFilters && (
+                <div className="flex items-end">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={clearFilters}
+                    className="gap-1.5 w-full"
+                  >
+                    <X className="w-4 h-4" /> مسح الفلاتر
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Filter Summary */}
+          {hasActiveFilters && (
+            <div className="mt-3 p-2 bg-blue-50 rounded-lg border border-blue-200">
+              <p className="text-sm text-blue-800">
+                <span className="font-semibold">النتائج المرشحة:</span> {filteredCerts.length} من {certs?.length || 0} شهادة
+                {courseFilter !== "all" && ` • الدورة: ${courseFilter}`}
+                {genderFilter !== "all" && ` • الجنس: ${genderFilter === "male" ? "ذكور" : "إناث"}`}
+                {dateFrom && ` • من: ${new Date(dateFrom).toLocaleDateString('ar-SA')}`}
+                {dateTo && ` • إلى: ${new Date(dateTo).toLocaleDateString('ar-SA')}`}
+              </p>
+            </div>
+          )}
         </CardHeader>
 
         <CardContent className="p-0">
@@ -439,41 +646,51 @@ export default function CertificatesDashboard() {
                 <TableRow>
                   <TableHead className="text-right">الاسم</TableHead>
                   <TableHead className="text-right">الدورة</TableHead>
+                  <TableHead className="text-right">الجنس</TableHead>
                   <TableHead className="text-right">الحالة</TableHead>
                   <TableHead className="text-right">النتيجة</TableHead>
                   <TableHead className="text-right">إجراءات</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredCerts.map((cert) => (
-                  <TableRow key={cert.id}>
-                    <TableCell className="font-semibold">{cert.fullNameAr}</TableCell>
-                    <TableCell>{cert.courseName}</TableCell>
-                    <TableCell><CertStatusBadge status={cert.status as CertStatusKey} /></TableCell>
-                    <TableCell>{cert.average ? `${cert.average} (${cert.finalGrade})` : "—"}</TableCell>
-                    <TableCell className="flex gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => setGradesCert(cert)} title="إدخال الدرجات"><FileText className="w-4 h-4 text-blue-600" /></Button>
-                      {cert.average && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" title="تنزيل الشهادة">
-                              <Download className="w-4 h-4 text-green-600" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => exportFunctions.exportToTxt(cert, COURSE_CONFIGS)}>
-                              تنزيل كـ Text
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => exportFunctions.exportToWord(cert, COURSE_CONFIGS)}>
-                              تنزيل كـ Word
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                      <Button variant="ghost" size="icon" onClick={() => setDeleteId(cert.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button>
+                {filteredCerts.length > 0 ? (
+                  filteredCerts.map((cert) => (
+                    <TableRow key={cert.id}>
+                      <TableCell className="font-semibold">{cert.fullNameAr}</TableCell>
+                      <TableCell>{cert.courseName}</TableCell>
+                      <TableCell>{cert.gender === "male" ? "ذكر" : "أنثى"}</TableCell>
+                      <TableCell><CertStatusBadge status={cert.status as CertStatusKey} /></TableCell>
+                      <TableCell>{cert.average ? `${cert.average} (${cert.finalGrade})` : "—"}</TableCell>
+                      <TableCell className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => setGradesCert(cert)} title="إدخال الدرجات"><FileText className="w-4 h-4 text-blue-600" /></Button>
+                        {cert.average && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" title="تنزيل الشهادة">
+                                <Download className="w-4 h-4 text-green-600" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => exportFunctions.exportToTxt(cert, COURSE_CONFIGS)}>
+                                تنزيل كـ Text
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => exportFunctions.exportToWord(cert, COURSE_CONFIGS)}>
+                                تنزيل كـ Word
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                        <Button variant="ghost" size="icon" onClick={() => setDeleteId(cert.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                      لا توجد شهادات تطابق الفلاتر المحددة
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </div>
