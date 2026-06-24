@@ -9,8 +9,18 @@ let _db: any = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      const pool = mysql.createPool(process.env.DATABASE_URL);
-      _db = drizzle(pool);
+      // استخدام createPool مع خيارات صريحة لضمان التوافق
+      const pool = mysql.createPool({
+        uri: process.env.DATABASE_URL,
+        connectionLimit: 10,
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 0,
+      });
+      
+      // فرض نمط MySQL بشكل صريح جداً في Drizzle
+      _db = drizzle(pool, { logger: true });
+      
+      console.log("[Database] Initialized with MySQL pool");
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
