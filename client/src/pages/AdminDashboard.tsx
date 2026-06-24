@@ -1,8 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -31,11 +30,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import CertificatesDashboard from "./CertificatesDashboard";
+import SidebarNavigation from "@/components/SidebarNavigation";
 import {
-  LogOut,
-  Download,
   Search,
   Users,
   Clock,
@@ -43,10 +39,8 @@ import {
   CheckCircle,
   XCircle,
   Trash2,
-  GraduationCap,
   RefreshCw,
   FileSpreadsheet,
-  Award,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -98,7 +92,6 @@ export default function AdminDashboard() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(0);
   const [deleteId, setDeleteId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState("registrations");
   const PAGE_SIZE = 20;
 
   const utils = trpc.useUtils();
@@ -145,10 +138,6 @@ export default function AdminDashboard() {
     onError: () => toast.error("فشل حذف الطلب"),
   });
 
-  const logoutMutation = trpc.admin.logout.useMutation({
-    onSuccess: () => navigate("/admin/login"),
-  });
-
   // Redirect if not authenticated
   if (!authLoading && !adminUser) {
     navigate("/admin/login");
@@ -172,7 +161,6 @@ export default function AdminDashboard() {
     }));
 
     const ws = XLSX.utils.json_to_sheet(rows, { skipHeader: false });
-    // RTL column widths
     ws["!cols"] = [
       { wch: 10 }, { wch: 10 }, { wch: 25 }, { wch: 18 },
       { wch: 28 }, { wch: 30 }, { wch: 14 }, { wch: 22 },
@@ -186,240 +174,190 @@ export default function AdminDashboard() {
   const totalPages = Math.ceil((regData?.total ?? 0) / PAGE_SIZE);
 
   return (
-    <div className="min-h-screen bg-gray-50/50">
-      {/* Header */}
-      <header
-        className="text-white shadow-lg sticky top-0 z-40"
-        style={{ background: "linear-gradient(135deg, #0b3f86, #0f5bb7)" }}
-      >
-        <div className="container flex items-center justify-between h-16">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
-              <GraduationCap className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="font-bold text-base leading-tight">مركز الأمجاد</h1>
-              <p className="text-xs text-white/70 leading-tight">لوحة التحكم</p>
-            </div>
+    <div className="flex min-h-screen bg-gray-50/50 flex-col lg:flex-row">
+      <SidebarNavigation />
+      
+      <main className="flex-1 p-4 lg:p-8 overflow-y-auto">
+        <div className="max-w-7xl mx-auto space-y-6">
+          <div className="mb-8">
+            <h1 className="text-2xl font-bold text-gray-900">إدارة طلبات التسجيل</h1>
+            <p className="text-gray-500 mt-1">عرض ومعالجة طلبات التسجيل في الدورات التدريبية</p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-white/80 hidden sm:block">
-              مرحباً، {adminUser?.username}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => logoutMutation.mutate()}
-              className="text-white hover:bg-white/20 gap-1.5"
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">خروج</span>
-            </Button>
-          </div>
-        </div>
-      </header>
 
-      <main className="container py-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="registrations" className="gap-2">
-              <Users className="w-4 h-4" />
-              <span className="hidden sm:inline">طلبات التسجيل</span>
-            </TabsTrigger>
-            <TabsTrigger value="certificates" className="gap-2">
-              <Award className="w-4 h-4" />
-              <span className="hidden sm:inline">طلبات الشهادات</span>
-            </TabsTrigger>
-          </TabsList>
+          {/* Stats */}
+          {stats && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <StatCard title="إجمالي الطلبات" value={stats.total} icon={Users} color="bg-blue-500" />
+              <StatCard title="قيد الانتظار" value={stats.pending} icon={Clock} color="bg-yellow-500" />
+              <StatCard title="تم التسجيل" value={stats.enrolled} icon={CheckCircle} color="bg-green-500" />
+              <StatCard title="مرفوض" value={stats.rejected} icon={XCircle} color="bg-red-500" />
+            </div>
+          )}
 
-          <TabsContent value="registrations" className="space-y-6 mt-6">
-            {/* Stats */}
-            {stats && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <StatCard title="إجمالي الطلبات" value={stats.total} icon={Users} color="bg-blue-500" />
-                <StatCard title="قيد الانتظار" value={stats.pending} icon={Clock} color="bg-yellow-500" />
-                <StatCard title="تم التسجيل" value={stats.enrolled} icon={CheckCircle} color="bg-green-500" />
-                <StatCard title="مرفوض" value={stats.rejected} icon={XCircle} color="bg-red-500" />
+          {/* Controls */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+                <CardTitle className="text-lg">قائمة الطلبات</CardTitle>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => refetch()}
+                    className="gap-1.5"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    تحديث
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleExport}
+                    className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    تصدير Excel
+                  </Button>
+                </div>
               </div>
-            )}
 
-            {/* Controls */}
-            <Card className="border-0 shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-                  <CardTitle className="text-lg">طلبات التسجيل</CardTitle>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => refetch()}
-                      className="gap-1.5"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                      تحديث
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleExport}
-                      className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"
-                    >
-                      <FileSpreadsheet className="w-4 h-4" />
-                      تصدير Excel
-                    </Button>
-                  </div>
+              <div className="flex flex-col sm:flex-row gap-3 mt-2">
+                <div className="relative flex-1">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="بحث بالاسم أو الهاتف أو البريد..."
+                    value={search}
+                    onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+                    className="pr-9 h-9"
+                  />
                 </div>
+                <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0); }}>
+                  <SelectTrigger className="w-full sm:w-44 h-9">
+                    <SelectValue placeholder="فلترة بالحالة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">جميع الحالات</SelectItem>
+                    <SelectItem value="pending">قيد الانتظار</SelectItem>
+                    <SelectItem value="contacted">تم التواصل</SelectItem>
+                    <SelectItem value="enrolled">مسجّل</SelectItem>
+                    <SelectItem value="rejected">مرفوض</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
 
-                <div className="flex flex-col sm:flex-row gap-3 mt-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      placeholder="بحث بالاسم أو الهاتف أو البريد..."
-                      value={search}
-                      onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-                      className="pr-9 h-9"
-                    />
-                  </div>
-                  <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0); }}>
-                    <SelectTrigger className="w-full sm:w-44 h-9">
-                      <SelectValue placeholder="فلترة بالحالة" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">جميع الحالات</SelectItem>
-                      <SelectItem value="pending">قيد الانتظار</SelectItem>
-                      <SelectItem value="contacted">تم التواصل</SelectItem>
-                      <SelectItem value="enrolled">مسجّل</SelectItem>
-                      <SelectItem value="rejected">مرفوض</SelectItem>
-                    </SelectContent>
-                  </Select>
+            <CardContent className="p-0">
+              {regLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
                 </div>
-              </CardHeader>
-
-              <CardContent className="p-0">
-                {regLoading ? (
-                  <div className="flex items-center justify-center py-16">
-                    <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-                  </div>
-                ) : !regData?.rows.length ? (
-                  <div className="text-center py-16 text-muted-foreground">
-                    <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                    <p>لا توجد طلبات مطابقة</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-gray-50/80">
-                            <TableHead className="text-right font-semibold w-12">#</TableHead>
-                            <TableHead className="text-right font-semibold w-14">العرض</TableHead>
-                            <TableHead className="text-right font-semibold">الاسم</TableHead>
-                            <TableHead className="text-right font-semibold">الهاتف</TableHead>
-                            <TableHead className="text-right font-semibold hidden md:table-cell">البريد</TableHead>
-                            <TableHead className="text-right font-semibold hidden lg:table-cell">الملاحظات</TableHead>
-                            <TableHead className="text-right font-semibold">الحالة</TableHead>
-                            <TableHead className="text-right font-semibold hidden sm:table-cell">التاريخ</TableHead>
-                            <TableHead className="text-right font-semibold w-10"></TableHead>
+              ) : !regData?.rows.length ? (
+                <div className="text-center py-16 text-muted-foreground">
+                  <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p>لا توجد طلبات مطابقة</p>
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-50/80">
+                          <TableHead className="text-right font-semibold w-12">#</TableHead>
+                          <TableHead className="text-right font-semibold w-14">العرض</TableHead>
+                          <TableHead className="text-right font-semibold">الاسم</TableHead>
+                          <TableHead className="text-right font-semibold">الهاتف</TableHead>
+                          <TableHead className="text-right font-semibold hidden md:table-cell">البريد</TableHead>
+                          <TableHead className="text-right font-semibold">الحالة</TableHead>
+                          <TableHead className="text-right font-semibold hidden sm:table-cell">التاريخ</TableHead>
+                          <TableHead className="text-right font-semibold w-10"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {regData.rows.map((reg) => (
+                          <TableRow key={reg.id} className="hover:bg-blue-50/30 transition-colors">
+                            <TableCell className="font-mono text-sm text-muted-foreground">{reg.id}</TableCell>
+                            <TableCell>
+                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-blue-700 font-bold text-sm">
+                                {reg.offerIndex}
+                              </span>
+                            </TableCell>
+                            <TableCell className="font-semibold">{reg.fullName}</TableCell>
+                            <TableCell className="font-mono text-sm" dir="ltr">{reg.phone}</TableCell>
+                            <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                              {reg.email || "—"}
+                            </TableCell>
+                            <TableCell>
+                              <Select
+                                value={reg.status}
+                                onValueChange={(v) =>
+                                  updateStatus.mutate({ id: reg.id, status: v as StatusKey })
+                                }
+                              >
+                                <SelectTrigger className="h-8 w-36 border-0 p-0 focus:ring-0 bg-transparent">
+                                  <StatusBadge status={reg.status as StatusKey} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="pending">قيد الانتظار</SelectItem>
+                                  <SelectItem value="contacted">تم التواصل</SelectItem>
+                                  <SelectItem value="enrolled">مسجّل</SelectItem>
+                                  <SelectItem value="rejected">مرفوض</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell text-xs text-muted-foreground whitespace-nowrap">
+                              {new Date(reg.createdAt).toLocaleDateString("ar-SA", {
+                                year: "numeric", month: "short", day: "numeric",
+                              })}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="w-8 h-8 text-red-400 hover:text-red-600 hover:bg-red-50"
+                                onClick={() => setDeleteId(reg.id)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </TableCell>
                           </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {regData.rows.map((reg) => (
-                            <TableRow key={reg.id} className="hover:bg-blue-50/30 transition-colors">
-                              <TableCell className="font-mono text-sm text-muted-foreground">{reg.id}</TableCell>
-                              <TableCell>
-                                <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-blue-700 font-bold text-sm">
-                                  {reg.offerIndex}
-                                </span>
-                              </TableCell>
-                              <TableCell className="font-semibold">{reg.fullName}</TableCell>
-                              <TableCell className="font-mono text-sm" dir="ltr">{reg.phone}</TableCell>
-                              <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                                {reg.email || "—"}
-                              </TableCell>
-                              <TableCell className="hidden lg:table-cell text-sm text-muted-foreground max-w-xs truncate">
-                                {reg.notes || "—"}
-                              </TableCell>
-                              <TableCell>
-                                <Select
-                                  value={reg.status}
-                                  onValueChange={(v) =>
-                                    updateStatus.mutate({ id: reg.id, status: v as StatusKey })
-                                  }
-                                >
-                                  <SelectTrigger className="h-8 w-36 border-0 p-0 focus:ring-0 bg-transparent">
-                                    <StatusBadge status={reg.status as StatusKey} />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="pending">قيد الانتظار</SelectItem>
-                                    <SelectItem value="contacted">تم التواصل</SelectItem>
-                                    <SelectItem value="enrolled">مسجّل</SelectItem>
-                                    <SelectItem value="rejected">مرفوض</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell className="hidden sm:table-cell text-xs text-muted-foreground whitespace-nowrap">
-                                {new Date(reg.createdAt).toLocaleDateString("ar-SA", {
-                                  year: "numeric", month: "short", day: "numeric",
-                                })}
-                                <br />
-                                {new Date(reg.createdAt).toLocaleTimeString("ar-SA", {
-                                  hour: "2-digit", minute: "2-digit",
-                                })}
-                              </TableCell>
-                              <TableCell>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="w-8 h-8 text-red-400 hover:text-red-600 hover:bg-red-50"
-                                  onClick={() => setDeleteId(reg.id)}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
 
-                    {/* Pagination */}
-                    {totalPages > 1 && (
-                      <div className="flex items-center justify-between px-4 py-3 border-t">
-                        <p className="text-sm text-muted-foreground">
-                          {regData.total} طلب إجمالاً
-                        </p>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setPage((p) => Math.max(0, p - 1))}
-                            disabled={page === 0}
-                          >
-                            السابق
-                          </Button>
-                          <span className="flex items-center text-sm px-2">
-                            {page + 1} / {totalPages}
-                          </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                            disabled={page >= totalPages - 1}
-                          >
-                            التالي
-                          </Button>
-                        </div>
+                  {/* Pagination */}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between px-4 py-3 border-t">
+                      <p className="text-sm text-muted-foreground">
+                        {regData.total} طلب إجمالاً
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage((p) => Math.max(0, p - 1))}
+                          disabled={page === 0}
+                        >
+                          السابق
+                        </Button>
+                        <span className="flex items-center text-sm px-2">
+                          {page + 1} / {totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                          disabled={page >= totalPages - 1}
+                        >
+                          التالي
+                        </Button>
                       </div>
-                    )}
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="certificates" className="mt-6">
-            <CertificatesDashboard />
-          </TabsContent>
-        </Tabs>
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </main>
 
       {/* Delete Confirm Dialog */}
