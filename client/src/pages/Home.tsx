@@ -1,6 +1,15 @@
+import { useEffect } from "react";
+import { useLocation } from "wouter";
 import { GraduationCap } from "lucide-react";
 
 export default function Home() {
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    // إعادة توجيه تلقائية إلى صفحة تسجيل الدخول
+    navigate("/admin/login");
+  }, [navigate]);
+
   return (
     <div
       className="min-h-screen flex items-center justify-center"
@@ -14,6 +23,7 @@ export default function Home() {
         </div>
         <h1 className="text-3xl font-bold">مركز الأمجاد للغات والتدريب</h1>
         <p className="mt-2 text-white/70">نظام إدارة الطلبات</p>
+        <p className="mt-4 text-sm text-white/50">جاري التحميل...</p>
       </div>
     </div>
   );
