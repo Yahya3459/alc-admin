@@ -187,14 +187,26 @@ export const appRouter = router({
 // ─── Bootstrap: إنشاء المدير الافتراضي عند أول تشغيل ─────────────────────────
 async function bootstrapAdmin() {
   try {
-    const exists = await adminUserExists();
-    if (!exists) {
-      const hash = await bcrypt.hash("ALC@Admin2026#Secure", 12);
+    const hash = await bcrypt.hash("ALC@Admin2026#Secure", 12);
+    const existingAdmin = await getAdminByUsername("yahya1019");
+    
+    if (!existingAdmin) {
       await createAdminUser("yahya1019", hash);
       console.log("[Bootstrap] Admin user created: yahya1019");
+    } else {
+      // تحديث كلمة المرور للمستخدم الحالي لضمان مطابقتها للمطلوب
+      const db = await getDb();
+      if (db) {
+        const { adminUsers } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(adminUsers)
+          .set({ passwordHash: hash })
+          .where(eq(adminUsers.username, "yahya1019"));
+        console.log("[Bootstrap] Admin password updated for: yahya1019");
+      }
     }
   } catch (err) {
-    console.error("[Bootstrap] Failed to create admin:", err);
+    console.error("[Bootstrap] Failed to bootstrap admin:", err);
   }
 }
 
