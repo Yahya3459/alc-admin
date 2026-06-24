@@ -29,6 +29,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import {
   Search,
@@ -42,8 +48,11 @@ import {
   Zap,
   FileText,
   FileSpreadsheet,
+  ChevronDown,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import { Document, Packer, Paragraph, Table as DocTable, TableCell as DocTableCell, TableRow as DocTableRow, WidthType, BorderStyle, AlignmentType } from "docx";
+import { saveAs } from "file-saver";
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const CERT_STATUS_MAP = {
@@ -71,13 +80,13 @@ const COURSE_CONFIGS: Record<string, { subjects: string[], isIcdl?: boolean, isG
     subjects: ["Listening", "Structure and written expression", "Reading", "Writing", "Speaking"]
   },
   "DIPLOMA_ADVANCED": {
-    subjects: ["AD.A", "AD.B", "AD.C", "AD.D", "AD.E", "AD.F", "AD.G"]
+    subjects: ["AD_A", "AD_B", "AD_C", "AD_D", "AD_E", "AD_F", "AD_G"]
   },
   "DIPLOMA_INTERMEDIATE": {
-    subjects: ["INT.A", "INT.B", "INT.C", "INT.D", "INT.E", "INT.F", "INT.G"]
+    subjects: ["INT_A", "INT_B", "INT_C", "INT_D", "INT_E", "INT_F", "INT_G"]
   },
   "DIPLOMA_ELEMENTARY": {
-    subjects: ["ELT.A", "ELT.B", "ELT.C", "ELT.D", "ELT.E", "ELT.F", "ELT.G"]
+    subjects: ["ELT_A", "ELT_B", "ELT_C", "ELT_D", "ELT_E", "ELT_F", "ELT_G"]
   },
   "ICDL": {
     isIcdl: true,
@@ -139,7 +148,8 @@ function GradesModal({ cert, onClose, onSave }: { cert: any, onClose: () => void
 
     if (count > 0) {
       const avg = totalScore / count;
-      setAverage(avg.toFixed(1) + (cert.courseName === "ICDL" || cert.courseName === "GRAPHICS" ? "%" : ""));
+      const avgFormatted = avg.toFixed(2);
+      setAverage(avgFormatted + (cert.courseName === "ICDL" || cert.courseName === "GRAPHICS" ? "%" : ""));
       setFinalGrade(calculateGrade(avg));
     }
   };
@@ -159,6 +169,7 @@ function GradesModal({ cert, onClose, onSave }: { cert: any, onClose: () => void
                 <div className="col-span-4">
                   <Input 
                     placeholder="الدرجة" 
+                    type="number"
                     value={config.isIcdl || config.isGraphics ? (grades[sub]?.result || "") : (grades[sub] || "")}
                     onChange={(e) => config.isIcdl || config.isGraphics ? handleGradeChange(sub, "result", e.target.value) : setGrades({...grades, [sub]: e.target.value})}
                   />
@@ -175,11 +186,11 @@ function GradesModal({ cert, onClose, onSave }: { cert: any, onClose: () => void
           <div className="grid grid-cols-2 gap-4 pt-4 border-t">
             <div>
               <label className="text-sm font-bold">المعدل / المجموع</label>
-              <Input value={average} onChange={(e) => setAverage(e.target.value)} />
+              <Input value={average} readOnly className="bg-blue-50 font-semibold" />
             </div>
             <div>
               <label className="text-sm font-bold">التقدير العام</label>
-              <Input value={finalGrade} onChange={(e) => setFinalGrade(e.target.value)} />
+              <Input value={finalGrade} readOnly className="bg-blue-50 font-semibold" />
             </div>
           </div>
 
@@ -192,6 +203,104 @@ function GradesModal({ cert, onClose, onSave }: { cert: any, onClose: () => void
     </div>
   );
 }
+
+// ─── Export Functions ────────────────────────────────────────────────────────
+const exportFunctions = {
+  exportToTxt: (cert: any, courseConfigs: typeof COURSE_CONFIGS) => {
+    const config = courseConfigs[cert.courseName];
+    const lines: string[] = [];
+    
+    lines.push(`Name,Course,Average,Grade,${config?.subjects.join(",") || ""}`);
+    
+    const gradeValues: string[] = [];
+    if (config) {
+      config.subjects.forEach(sub => {
+        const val = cert.grades?.[sub];
+        gradeValues.push(typeof val === 'object' ? (val.result || "") : (val || ""));
+      });
+    }
+    
+    lines.push(`${cert.fullNameEn},${cert.courseName},${cert.average},${cert.finalGrade},${gradeValues.join(",")}`);
+    
+    const content = lines.join("\n");
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${cert.fullNameEn}_${cert.courseName}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  exportToWord: async (cert: any, courseConfigs: typeof COURSE_CONFIGS) => {
+    const config = courseConfigs[cert.courseName];
+    
+    const tableRows: DocTableRow[] = [];
+    
+    // Header row
+    const headerCells = [
+      new DocTableCell({ children: [new Paragraph("Name")] }),
+      new DocTableCell({ children: [new Paragraph("Course")] }),
+      new DocTableCell({ children: [new Paragraph("Average")] }),
+      new DocTableCell({ children: [new Paragraph("Grade")] }),
+    ];
+    
+    if (config) {
+      config.subjects.forEach(sub => {
+        headerCells.push(new DocTableCell({ children: [new Paragraph(sub)] }));
+      });
+    }
+    
+    tableRows.push(new DocTableRow({ children: headerCells }));
+    
+    // Data row
+    const dataCells = [
+      new DocTableCell({ children: [new Paragraph(cert.fullNameEn)] }),
+      new DocTableCell({ children: [new Paragraph(cert.courseName)] }),
+      new DocTableCell({ children: [new Paragraph(cert.average || "")] }),
+      new DocTableCell({ children: [new Paragraph(cert.finalGrade || "")] }),
+    ];
+    
+    if (config) {
+      config.subjects.forEach(sub => {
+        const val = cert.grades?.[sub];
+        const displayVal = typeof val === 'object' ? (val.result || "") : (val || "");
+        dataCells.push(new DocTableCell({ children: [new Paragraph(displayVal)] }));
+      });
+    }
+    
+    tableRows.push(new DocTableRow({ children: dataCells }));
+    
+    const doc = new Document({
+      sections: [{
+        children: [
+          new Paragraph({
+            text: `Certificate Report - ${cert.fullNameEn}`,
+            bold: true,
+            size: 28,
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph(""),
+          new DocTable({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: tableRows,
+            borders: {
+              top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              left: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              right: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              insideVertical: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+            },
+          }),
+        ],
+      }],
+    });
+    
+    const blob = await Packer.toBlob(doc);
+    saveAs(blob, `${cert.fullNameEn}_${cert.courseName}.docx`);
+  },
+};
 
 // ─── Main Certificates Dashboard ──────────────────────────────────────────────
 export default function CertificatesDashboard() {
@@ -246,21 +355,45 @@ export default function CertificatesDashboard() {
     XLSX.writeFile(wb, "Certificate_Requests.xlsx");
   };
 
-  const exportToTxt = (cert: any) => {
-    let content = `Name: ${cert.fullNameEn}\nCourse: ${cert.courseName}\nAverage: ${cert.average}\nGrade: ${cert.finalGrade}\n\nGrades:\n`;
-    const config = COURSE_CONFIGS[cert.courseName];
-    if (config) {
-      config.subjects.forEach(sub => {
-        const val = cert.grades?.[sub];
-        content += `${sub}: ${typeof val === 'object' ? val.result : val}\n`;
+  const exportAllToTxt = () => {
+    const lines: string[] = [];
+    
+    // Get all unique subjects from all certificates
+    const allSubjects = new Set<string>();
+    filteredCerts.forEach(cert => {
+      const config = COURSE_CONFIGS[cert.courseName];
+      if (config) {
+        config.subjects.forEach(sub => allSubjects.add(sub));
+      }
+    });
+    
+    const subjectsArray = Array.from(allSubjects);
+    lines.push(`Name,Course,Average,Grade,${subjectsArray.join(",")}`);
+    
+    filteredCerts.forEach(cert => {
+      const config = COURSE_CONFIGS[cert.courseName];
+      const gradeValues: string[] = [];
+      
+      subjectsArray.forEach(sub => {
+        if (config?.subjects.includes(sub)) {
+          const val = cert.grades?.[sub];
+          gradeValues.push(typeof val === 'object' ? (val.result || "") : (val || ""));
+        } else {
+          gradeValues.push("");
+        }
       });
-    }
-    const blob = new Blob([content], { type: "text/plain" });
+      
+      lines.push(`${cert.fullNameEn},${cert.courseName},${cert.average || ""},${cert.finalGrade || ""},${gradeValues.join(",")}`);
+    });
+    
+    const content = lines.join("\n");
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${cert.fullNameEn}_grades.txt`;
+    a.download = `All_Certificates_${new Date().toISOString().split('T')[0]}.txt`;
     a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -269,9 +402,10 @@ export default function CertificatesDashboard() {
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
             <CardTitle className="text-lg">إدارة طلبات الشهادات</CardTitle>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5"><RefreshCw className="w-4 h-4" /> تحديث</Button>
-              <Button size="sm" onClick={exportToExcel} className="gap-1.5 bg-green-600 text-white"><FileSpreadsheet className="w-4 h-4" /> تصدير Excel</Button>
+              <Button size="sm" onClick={exportToExcel} className="gap-1.5 bg-green-600 text-white"><FileSpreadsheet className="w-4 h-4" /> Excel</Button>
+              <Button size="sm" onClick={exportAllToTxt} className="gap-1.5 bg-blue-600 text-white"><FileText className="w-4 h-4" /> Text</Button>
             </div>
           </div>
 
@@ -319,7 +453,23 @@ export default function CertificatesDashboard() {
                     <TableCell>{cert.average ? `${cert.average} (${cert.finalGrade})` : "—"}</TableCell>
                     <TableCell className="flex gap-1">
                       <Button variant="ghost" size="icon" onClick={() => setGradesCert(cert)} title="إدخال الدرجات"><FileText className="w-4 h-4 text-blue-600" /></Button>
-                      {cert.average && <Button variant="ghost" size="icon" onClick={() => exportToTxt(cert)} title="تصدير نصي"><Download className="w-4 h-4 text-green-600" /></Button>}
+                      {cert.average && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" title="تنزيل الشهادة">
+                              <Download className="w-4 h-4 text-green-600" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => exportFunctions.exportToTxt(cert, COURSE_CONFIGS)}>
+                              تنزيل كـ Text
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => exportFunctions.exportToWord(cert, COURSE_CONFIGS)}>
+                              تنزيل كـ Word
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                       <Button variant="ghost" size="icon" onClick={() => setDeleteId(cert.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button>
                     </TableCell>
                   </TableRow>
