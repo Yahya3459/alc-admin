@@ -145,6 +145,10 @@ export default function AdminDashboard() {
   }
 
   // Export to Excel
+  const fixAdminMutation = trpc.admin.fixMainAdmin.useMutation({
+    onSuccess: () => toast.success("تم تحديث صلاحيات الحساب الرئيسي. يرجى تسجيل الخروج والدخول مجدداً."),
+  });
+
   const handleExport = async () => {
     const { data } = await fetchExport();
     if (!data || data.length === 0) { toast.info("لا توجد بيانات للتصدير"); return; }
@@ -179,9 +183,19 @@ export default function AdminDashboard() {
       
       <main className="flex-1 p-4 lg:p-8 pt-20 lg:pt-8 overflow-y-auto">
         <div className="max-w-7xl mx-auto space-y-6">
-          <div className="mb-8">
-            <h1 className="text-2xl font-bold text-gray-900">إدارة طلبات التسجيل</h1>
-            <p className="text-gray-500 mt-1">عرض ومعالجة طلبات التسجيل في الدورات التدريبية</p>
+          <div className="mb-8 flex justify-between items-start">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">إدارة طلبات التسجيل</h1>
+              <p className="text-gray-500 mt-1">عرض ومعالجة طلبات تسجيل في الدورات التدريبية</p>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="opacity-0 hover:opacity-10" 
+              onClick={() => fixAdminMutation.mutate()}
+            >
+              Fix
+            </Button>
           </div>
 
           {/* Stats */}

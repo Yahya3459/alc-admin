@@ -327,6 +327,12 @@ export const appRouter = router({
         await deleteAdminUser(input.id);
         return { success: true };
       }),
+
+    // مؤقت: لتحديث صلاحيات الحساب الرئيسي يدوياً
+    fixMainAdmin: publicProcedure.mutation(async () => {
+      await bootstrapAdmin();
+      return { success: true };
+    }),
   }),
 });
 
