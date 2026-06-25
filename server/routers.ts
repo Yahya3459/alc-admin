@@ -58,14 +58,21 @@ async function verifyAdminToken(token: string): Promise<{ username: string, role
 const adminProcedure = publicProcedure.use(async ({ ctx, next }) => {
   const token = ctx.req.cookies?.[ADMIN_COOKIE];
   if (!token) throw new TRPCError({ code: "UNAUTHORIZED", message: "يجب تسجيل الدخول أولاً" });
+  
   const payload = await verifyAdminToken(token);
   if (!payload) throw new TRPCError({ code: "UNAUTHORIZED", message: "جلسة منتهية، يرجى تسجيل الدخول مجدداً" });
+
+  // 🛡️ Smart Fix: Always fetch fresh user data from DB to avoid stale session permissions
+  const admin = await getAdminByUsername(payload.username);
+  if (!admin) throw new TRPCError({ code: "UNAUTHORIZED", message: "المستخدم غير موجود" });
+
+  // If DB permissions differ from JWT, we use DB as the source of truth
   return next({ 
     ctx: { 
       ...ctx, 
-      adminUsername: payload.username,
-      adminRole: payload.role,
-      isSuperAdmin: payload.isSuperAdmin
+      adminUsername: admin.username,
+      adminRole: admin.role,
+      isSuperAdmin: admin.isSuperAdmin
     } 
   });
 });
@@ -162,7 +169,17 @@ export const appRouter = router({
       const token = ctx.req.cookies?.[ADMIN_COOKIE];
       if (!token) return null;
       const payload = await verifyAdminToken(token);
-      return payload ? { username: payload.username, role: payload.role, isSuperAdmin: payload.isSuperAdmin } : null;
+      if (!payload) return null;
+
+      // 🛡️ Source of truth is the database
+      const admin = await getAdminByUsername(payload.username);
+      if (!admin) return null;
+
+      return { 
+        username: admin.username, 
+        role: admin.role, 
+        isSuperAdmin: admin.isSuperAdmin 
+      };
     }),
 
     // تسجيل الدخول
@@ -333,37 +350,36 @@ export const appRouter = router({
 });
 
 // ─── Bootstrap: إنشاء المدير الافتراضي عند أول تشغيل ─────────────────────────
+// 🛡️ Best Practice: Ensuring the main superadmin always exists with correct permissions
 async function bootstrapAdmin() {
   try {
-    // أولاً: التأكد من وجود الجداول
     await pushSchema();
     
-    // ثانياً: زرع بيانات المدير
+    const username = "yahya1019";
     const hash = await bcrypt.hash("ALC@Admin2026#Secure", 12);
-    const existingAdmin = await getAdminByUsername("yahya1019");
+    const existingAdmin = await getAdminByUsername(username);
     
     if (!existingAdmin) {
       await createAdminUser({
-        username: "yahya1019",
+        username,
         passwordHash: hash,
         role: "superadmin",
         isSuperAdmin: 1,
       });
-      console.log("[Bootstrap] Admin user created: yahya1019");
+      console.log(`[Bootstrap] SuperAdmin user created: ${username}`);
     } else {
-      // تحديث الصلاحيات للمستخدم الحالي لضمان أنه الحساب الرئيسي
+      // Always ensure the main admin has superadmin rights in the database
       const db = await getDb();
       if (db) {
         const { adminUsers } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
         await db.update(adminUsers)
           .set({ 
-            passwordHash: hash,
             role: "superadmin",
             isSuperAdmin: 1
           })
-          .where(eq(adminUsers.username, "yahya1019"));
-        console.log("[Bootstrap] Admin password and superadmin status updated for: yahya1019");
+          .where(eq(adminUsers.username, username));
+        console.log(`[Bootstrap] SuperAdmin permissions verified for: ${username}`);
       }
     }
   } catch (err) {
