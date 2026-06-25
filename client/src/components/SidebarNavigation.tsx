@@ -22,12 +22,6 @@ export default function SidebarNavigation() {
 
   const { data: adminUser } = trpc.admin.me.useQuery();
   const isSuperAdmin = adminUser?.role === "superadmin" || adminUser?.isSuperAdmin === 1;
-  const fixAdminMutation = trpc.admin.fixMainAdmin.useMutation({
-    onSuccess: () => {
-      // Refresh the page to get updated permissions
-      window.location.reload();
-    }
-  });
 
   const menuItems = [
     {
@@ -78,12 +72,8 @@ export default function SidebarNavigation() {
           {/* Sidebar Header (Desktop only) - Now clickable */}
           <button
             onClick={() => {
-              if (isSuperAdmin) {
-                navigate("/admin/users");
-                setIsOpen(false);
-              } else {
-                fixAdminMutation.mutate();
-              }
+              navigate("/admin/users");
+              setIsOpen(false);
             }}
             className="hidden lg:flex items-center gap-3 p-6 border-b bg-gray-50/50 hover:bg-blue-50 transition-colors w-full cursor-pointer"
           >
