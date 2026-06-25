@@ -47,6 +47,7 @@ import {
   FileText,
   Filter,
   X,
+  ChevronDown,
 } from "lucide-react";
 import { Document, Packer, Paragraph, Table as DocTable, TableCell as DocTableCell, TableRow as DocTableRow, WidthType, BorderStyle, AlignmentType } from "docx";
 import { saveAs } from "file-saver";
@@ -274,6 +275,94 @@ const exportFunctions = {
     });
     const blob = await Packer.toBlob(doc);
     saveAs(blob, `${cert.fullNameEn}_${cert.courseName}.docx`);
+  },
+
+  exportMultipleToTxt: (certs: any[], courseConfigs: typeof COURSE_CONFIGS) => {
+    const lines: string[] = [];
+    const allSubjects = new Set<string>();
+    certs.forEach(cert => {
+      const config = courseConfigs[cert.courseName];
+      if (config) { config.subjects.forEach(sub => allSubjects.add(sub)); }
+    });
+    const subjectsArray = Array.from(allSubjects);
+    lines.push(`Name,Course,Total,Average,Grade,${subjectsArray.join(",")}`);
+    certs.forEach(cert => {
+      const config = courseConfigs[cert.courseName];
+      const gradeValues: string[] = [];
+      subjectsArray.forEach(sub => {
+        if (config?.subjects.includes(sub)) {
+          const val = cert.grades?.[sub];
+          const result = typeof val === 'object' ? (val.result || "") : (val || "");
+          const grade = typeof val === 'object' ? (val.grade || "") : "";
+          gradeValues.push(`${result}${grade ? ` (${grade})` : ""}`);
+        } else { gradeValues.push(""); }
+      });
+      lines.push(`${cert.fullNameEn},${cert.courseName},${cert.total || ""},${cert.average || ""},${cert.finalGrade || ""},${gradeValues.join(",")}`);
+    });
+    const content = lines.join("\n");
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    saveAs(blob, `Certificates_${new Date().toISOString().split('T')[0]}.txt`);
+  },
+
+  exportMultipleToWord: async (certs: any[], courseConfigs: typeof COURSE_CONFIGS) => {
+    const allSubjects = new Set<string>();
+    certs.forEach(cert => {
+      const config = courseConfigs[cert.courseName];
+      if (config) { config.subjects.forEach(sub => allSubjects.add(sub)); }
+    });
+    const subjectsArray = Array.from(allSubjects);
+    const tableRows: DocTableRow[] = [];
+    const headerCells = [
+      new DocTableCell({ children: [new Paragraph("Name")] }),
+      new DocTableCell({ children: [new Paragraph("Course")] }),
+      new DocTableCell({ children: [new Paragraph("Total")] }),
+      new DocTableCell({ children: [new Paragraph("Average")] }),
+      new DocTableCell({ children: [new Paragraph("Grade")] }),
+    ];
+    subjectsArray.forEach(sub => { headerCells.push(new DocTableCell({ children: [new Paragraph(sub)] })); });
+    tableRows.push(new DocTableRow({ children: headerCells }));
+    certs.forEach(cert => {
+      const config = courseConfigs[cert.courseName];
+      const dataCells = [
+        new DocTableCell({ children: [new Paragraph(cert.fullNameEn)] }),
+        new DocTableCell({ children: [new Paragraph(cert.courseName)] }),
+        new DocTableCell({ children: [new Paragraph(cert.total || "")] }),
+        new DocTableCell({ children: [new Paragraph(cert.average || "")] }),
+        new DocTableCell({ children: [new Paragraph(cert.finalGrade || "")] }),
+      ];
+      subjectsArray.forEach(sub => {
+        if (config?.subjects.includes(sub)) {
+          const val = cert.grades?.[sub];
+          const result = typeof val === 'object' ? (val.result || "") : (val || "");
+          const grade = typeof val === 'object' ? (val.grade || "") : "";
+          const displayVal = `${result}${grade ? ` (${grade})` : ""}`;
+          dataCells.push(new DocTableCell({ children: [new Paragraph(displayVal)] }));
+        } else { dataCells.push(new DocTableCell({ children: [new Paragraph("")] })); }
+      });
+      tableRows.push(new DocTableRow({ children: dataCells }));
+    });
+    const doc = new Document({
+      sections: [{
+        children: [
+          new Paragraph({ text: "Certificates Summary Report", bold: true, size: 28, alignment: AlignmentType.CENTER }),
+          new Paragraph(""),
+          new DocTable({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: tableRows,
+            borders: {
+              top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              left: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              right: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              insideVertical: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+            },
+          }),
+        ],
+      }],
+    });
+    const blob = await Packer.toBlob(doc);
+    saveAs(blob, `Certificates_${new Date().toISOString().split('T')[0]}.docx`);
   }
 };
 
@@ -344,6 +433,32 @@ export default function CertificatesDashboard() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Download className="w-4 h-4" />
+                تصدير البيانات
+                <ChevronDown className="w-4 h-4 opacity-50" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={() => exportFunctions.exportMultipleToTxt(filteredCerts, COURSE_CONFIGS)}>
+                تصدير الكل كـ Text
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportFunctions.exportMultipleToWord(filteredCerts, COURSE_CONFIGS)}>
+                تصدير الكل كـ Word
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-2">
+            <RefreshCw className="w-4 h-4" />
+            تحديث
+          </Button>
+        </div>
+      </div>
+
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col md:flex-row md:items-center gap-4">
