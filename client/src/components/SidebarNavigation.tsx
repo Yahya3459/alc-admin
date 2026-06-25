@@ -9,6 +9,7 @@ import {
   X,
   GraduationCap,
   UserCog,
+  Phone,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 
@@ -21,6 +22,12 @@ export default function SidebarNavigation() {
 
   const { data: adminUser } = trpc.admin.me.useQuery();
   const isSuperAdmin = adminUser?.role === "superadmin" || adminUser?.isSuperAdmin === 1;
+  const fixAdminMutation = trpc.admin.fixMainAdmin.useMutation({
+    onSuccess: () => {
+      // Refresh the page to get updated permissions
+      window.location.reload();
+    }
+  });
 
   const menuItems = [
     {
@@ -68,16 +75,26 @@ export default function SidebarNavigation() {
         } lg:static lg:inset-0`}
       >
         <div className="flex flex-col h-full">
-          {/* Sidebar Header (Desktop only) */}
-          <div className="hidden lg:flex items-center gap-3 p-6 border-b bg-gray-50/50">
+          {/* Sidebar Header (Desktop only) - Now clickable */}
+          <button
+            onClick={() => {
+              if (isSuperAdmin) {
+                navigate("/admin/users");
+                setIsOpen(false);
+              } else {
+                fixAdminMutation.mutate();
+              }
+            }}
+            className="hidden lg:flex items-center gap-3 p-6 border-b bg-gray-50/50 hover:bg-blue-50 transition-colors w-full cursor-pointer"
+          >
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
               <GraduationCap className="w-6 h-6 text-white" />
             </div>
-            <div>
+            <div className="text-left">
               <h1 className="font-bold text-blue-900 leading-tight">مركز الأمجاد</h1>
               <p className="text-xs text-blue-600/70">لوحة التحكم</p>
             </div>
-          </div>
+          </button>
 
           {/* Navigation Links */}
           <nav className="flex-1 p-4 space-y-2 mt-4">
@@ -100,8 +117,8 @@ export default function SidebarNavigation() {
             ))}
           </nav>
 
-          {/* Logout Section */}
-          <div className="p-4 border-t">
+          {/* Logout Section with Developer Copyright */}
+          <div className="p-4 border-t space-y-4">
             <button
               onClick={() => logoutMutation.mutate()}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition-all"
@@ -109,6 +126,19 @@ export default function SidebarNavigation() {
               <LogOut className="w-5 h-5" />
               <span className="font-medium">تسجيل الخروج</span>
             </button>
+            
+            {/* Developer Copyright */}
+            <div className="text-center pt-4 border-t">
+              <p className="text-xs text-gray-600 font-semibold mb-2">جميع الحقوق محفوظة © 2026</p>
+              <p className="text-xs text-gray-700 font-medium mb-2">تنفيذ وتطوير م/يحيى المريسي</p>
+              <a 
+                href="tel:967770400943" 
+                className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-700 transition-colors"
+              >
+                <Phone className="w-4 h-4" />
+                <span className="text-xs font-semibold">967770400943</span>
+              </a>
+            </div>
           </div>
         </div>
       </aside>
