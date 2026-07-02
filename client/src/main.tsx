@@ -8,6 +8,19 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import "./index.css";
 
+// --- Analytics Initialization ---
+const analyticsEndpoint = import.meta.env.VITE_ANALYTICS_ENDPOINT;
+const analyticsId = import.meta.env.VITE_ANALYTICS_WEBSITE_ID;
+
+if (analyticsEndpoint && analyticsId && typeof document !== "undefined") {
+  const script = document.createElement("script");
+  script.async = true;
+  script.defer = true;
+  script.src = `${analyticsEndpoint}/umami`;
+  script.setAttribute("data-website-id", analyticsId);
+  document.head.appendChild(script);
+}
+
 const queryClient = new QueryClient();
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
